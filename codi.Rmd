@@ -1,0 +1,197 @@
+---
+title: "Monitor d'Opinió Pública (2000-2025)"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    theme:
+      version: 4
+      bootswatch: lux
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(haven)
+library(tidyverse)
+library(lubridate)
+library(ggridges)
+library(viridis)
+library(plotly)
+library(scales)
+```
+
+```{r}
+# --- 1. CÀRREGA DE DADES ---
+dades_cis <- read_sav("C:/Users/maria/Desktop/MASTER/SegonsSemestre/Visualització de dades/PRÀCTICA/FID3665.sav")
+
+dades_netes <- dades_cis %>%
+  select(ANY_MES = AÑOMES, EDAT = A.4, IDEOLOGIA = C.3.1, CLASSE = G.14, ECONOMIA = B.1.1.2) %>%
+  mutate(
+    ANY = as.numeric(substr(as.character(ANY_MES), 1, 4)),
+    IDEOLOGIA = if_else(IDEOLOGIA > 10, NA_real_, IDEOLOGIA),
+    CLASSE_AGR = case_when(
+      CLASSE %in% c(1, 2) ~ "Alta/Mitja-Alta",
+      CLASSE %in% c(3, 4) ~ "Mitja",
+      CLASSE %in% c(5, 6, 7, 8, 12) ~ "Treballadora/Baixa",
+      TRUE ~ NA_character_
+    ),
+    ANY_NAIXEMENT = ANY - EDAT,
+    GENERACIO = case_when(
+      ANY_NAIXEMENT >= 1997 ~ "Gen Z",
+      ANY_NAIXEMENT >= 1981 ~ "Millennials",
+      ANY_NAIXEMENT >= 1965 ~ "Gen X",
+      ANY_NAIXEMENT >= 1946 ~ "Boomers",
+      TRUE ~ "Silenciosa"
+    ),
+    ECONOMIA_PESSIMISME = if_else(ECONOMIA %in% c(4, 5), 1, 0)
+  ) %>%
+  filter(ANY >= 2000)
+
+# --- CÀLCULS PER A LA PORTADA (VALUE BOXES) ---
+total_enquestats <- comma(nrow(dades_netes), big.mark = ".", decimal.mark = ",")
+total_anys <- length(unique(dades_netes$ANY))
+any_inici <- min(dades_netes$ANY)
+any_fi <- max(dades_netes$ANY)
+```
+
+```{=html}
+<style>
+.peu-pagina {
+  position: fixed;
+  bottom: 5px;                /* Més enganxat a baix (era 10px) */
+  left: 10px;                 /* ARA SURT A L'ESQUERRA */
+  z-index: 1000;
+  font-size: 10px;            /* Una mica més petit perquè destorbi menys */
+  font-family: sans-serif;
+  color: #555;
+  background-color: rgba(255, 255, 255, 0.6); /* Més transparent */
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+</style>
+```
+
+::: peu-pagina
+Dashboard: <b>Maria Darder</b> \| Font: CIS
+:::
+
+::: peu-pagina
+Dashboard creat per <b>Maria Darder Terradas</b> \| Màster en Ciència de Dades \| Font: CIS
+:::
+
+# Inici {data-icon="fa-home"}
+
+## Row {data-height="150"}
+
+### Anys Analitzats
+
+```{r}
+valueBox(total_anys, icon = "fa-clock", color = "#440154")
+```
+
+### Persones Enquestades
+
+```{r}
+valueBox(total_enquestats, icon = "fa-users", color = "#21908C")
+```
+
+### Període Temporal
+
+```{r}
+text_periode <- paste(any_inici, "-", any_fi)
+valueBox(text_periode, icon = "fa-calendar", color = "#FDE725")
+```
+
+## Row
+
+#### **Monitor d'Opinió Pública a Espanya (2000-2025)**
+
+Aquest projecte de visualització de dades té com a objectiu analitzar l'evolució ideològica i social de la població espanyola durant l'últim quart de segle. A través de les dades del Baròmetre del CIS, explorem com han canviat les percepcions polítiques i econòmiques.
+
+------------------------------------------------------------------------
+
+**Què trobaràs en aquest Dashboard?**
+
+-   **Visió Global:** Una animació temporal que mostra com la societat s'ha polaritzat o moderat al llarg dels anys.
+-   **Anàlisi Detallat:** Gràfics estàtics i interactius per aprofundir en la polarització, les diferències generacionals i l'impacte de la classe social.
+
+------------------------------------------------------------------------
+
+**Instruccions de navegació:**
+
+-   Utilitza el menú de la barra superior (a dalt de tot) per moure't entre la **Visió Global** i l'**Anàlisi Detallat**.
+
+# Radiografia de la Polarització
+
+```{r}
+# 2. Visualitzacions
+# Gràfic A: Evolució de la Polarització (Animació)
+# Aquest gràfic mostra com la "muntanya" del consens es va aplanant amb el temps.
+
+# 1. Càlcul de densitats per a l'animació
+dades_animacio <- dades_netes %>%
+  filter(!is.na(IDEOLOGIA)) %>%
+  group_by(ANY) %>%
+  do({
+    d <- density(.$IDEOLOGIA, from = 1, to = 10, n = 100, adjust = 1.5)
+    data.frame(x = d$x, y = d$y)
+  }) %>%
+  ungroup()
+
+# 2. Construcció del gràfic animat
+fig_animada <- plot_ly(
+  data = dades_animacio,
+  x = ~x,
+  y = ~y,
+  frame = ~ANY,       # Aquesta màgia crea el botó de Play per Anys
+  type = 'scatter',
+  mode = 'lines',
+  fill = 'tozeroy',   # Omple de color sota la línia
+  line = list(color = "#440154", width = 2),
+  fillcolor = "rgba(68, 1, 84, 0.5)"
+) %>%
+  layout(
+    title = "Evolució Ideològica",
+    xaxis = list(title = "Esquerra (1) --- Centre --- Dreta (10)", range = c(1, 10)),
+    yaxis = list(title = "Densitat de població", range = c(0, 0.45)), # Fixem l'alçada perquè no salti
+    showlegend = FALSE
+    ) %>%
+  animation_opts(frame = 200, transition = 0) # Velocitat suau
+
+fig_animada
+```
+
+# La Bretxa Generacional
+
+```{r}
+# --- LÍNIES GENERACIONS ---
+dades_gen <- dades_netes %>%
+  group_by(ANY, GENERACIO) %>%
+  summarise(IDEOLOGIA_MITJANA = mean(IDEOLOGIA, na.rm = TRUE), .groups = 'drop')
+
+p2 <- ggplot(dades_gen, aes(x = ANY, y = IDEOLOGIA_MITJANA, color = GENERACIO)) +
+  geom_line(size = 1) + geom_point(size = 1.5) +
+  scale_color_viridis_d(option = "D") + 
+  labs(x = "Any", y = "Mitjana (1=Esq, 10=Dreta)", color = "") +
+  theme_minimal()
+
+ggplotly(p2) %>% layout(legend = list(orientation = "h", x = 0, y = 1.1))
+```
+
+# Fractura Social i Econòmica
+
+```{r}
+# --- HEATMAP CLASSE (Només 2020-2025) ---
+dades_classe <- dades_netes %>%
+  filter(ANY >= 2020) %>%
+  group_by(ANY, CLASSE_AGR) %>%
+  summarise(PCT_PESSIMISME = mean(ECONOMIA_PESSIMISME, na.rm = TRUE) * 100, .groups = 'drop')
+
+p3 <- ggplot(dades_classe, aes(x = ANY, y = CLASSE_AGR, fill = PCT_PESSIMISME)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(option = "D", direction = 1, name = "% Pessimisme") +
+  labs(x = "Any", y = "") +
+  theme_minimal()
+
+ggplotly(p3)
+```
